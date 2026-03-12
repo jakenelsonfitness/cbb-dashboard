@@ -51,7 +51,7 @@ interface LiveScore {
 
 async function fetchESPNScores(dateStr: string): Promise<Map<string, LiveScore>> {
   const d = dateStr.replace(/-/g, '')
-  const url = `https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?dates=${d}&limit=200`
+  const url = `https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?dates=${d}&limit=300&groups=50`
   const map = new Map<string, LiveScore>()
   try {
     const res = await fetch(url, { cache: 'no-store' })
