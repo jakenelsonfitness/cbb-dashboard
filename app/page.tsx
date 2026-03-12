@@ -64,8 +64,11 @@ async function fetchESPNScores(dateStr: string): Promise<Map<string, LiveScore>>
         const commence: string = comp.date ?? ''
 
         let liveStatus = 'pre'
-        if (statusType === 'post') liveStatus = 'final'
-        else if (statusType === 'in') liveStatus = period <= 2 ? `H${period} ${clock}` : `OT ${clock}`
+        if (statusType.includes('final') || statusType.includes('post') || statusType === 'post') {
+          liveStatus = 'final'
+        } else if (statusType.includes('progress') || statusType.includes('halftime') || statusType.includes('end_period') || statusType === 'in') {
+          liveStatus = period <= 2 ? `H${period} ${clock}` : `OT ${clock}`
+        }
 
         const home = comp.competitors?.find((c: {homeAway: string}) => c.homeAway === 'home')
         const away = comp.competitors?.find((c: {homeAway: string}) => c.homeAway === 'away')
@@ -288,14 +291,21 @@ export default function Dashboard() {
 
   const displayDate = new Date(date + 'T12:00:00').toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
 
-  // Merge ESPN live scores into games
-  const gamesWithScores = games.map(g => {
-    const espn = fuzzyScore(g.away_team, g.home_team, liveScores)
-    if (!espn) return g
-    const mergedSpread = g.spread ? { ...g.spread, home_score: espn.home_score, away_score: espn.away_score, live_status: espn.live_status, game_time: espn.game_time ?? g.game_time } : null
-    const mergedTotal  = g.total  ? { ...g.total,  home_score: espn.home_score, away_score: espn.away_score, live_status: espn.live_status, game_time: espn.game_time ?? g.game_time } : null
-    return { ...g, game_time: espn.game_time ?? g.game_time, spread: mergedSpread, total: mergedTotal }
-  })
+  // Merge ESPN live scores into games, then sort by tipoff time
+  const gamesWithScores = games
+    .map(g => {
+      const espn = fuzzyScore(g.away_team, g.home_team, liveScores)
+      if (!espn) return g
+      const gt = espn.game_time ?? g.game_time
+      const mergedSpread = g.spread ? { ...g.spread, home_score: espn.home_score, away_score: espn.away_score, live_status: espn.live_status, game_time: gt } : null
+      const mergedTotal  = g.total  ? { ...g.total,  home_score: espn.home_score, away_score: espn.away_score, live_status: espn.live_status, game_time: gt } : null
+      return { ...g, game_time: gt, spread: mergedSpread, total: mergedTotal }
+    })
+    .sort((a, b) => {
+      if (!a.game_time) return 1
+      if (!b.game_time) return -1
+      return new Date(a.game_time).getTime() - new Date(b.game_time).getTime()
+    })
 
   const todayWins   = gamesWithScores.filter(g => overallResult(g) === 'win').length
   const todayLosses = gamesWithScores.filter(g => overallResult(g) === 'loss').length
