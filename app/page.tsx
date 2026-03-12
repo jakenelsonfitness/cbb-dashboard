@@ -323,8 +323,30 @@ export default function Dashboard() {
       return new Date(a.game_time).getTime() - new Date(b.game_time).getTime()
     })
 
-  const todayWins   = gamesWithScores.filter(g => g.spread?.result === 'win' || g.total?.result === 'win').length
-  const todayLosses = gamesWithScores.filter(g => g.spread?.result === 'loss' || g.total?.result === 'loss').length
+  // Compute today's W/L/units fully client-side from ESPN grades
+  let todayWins = 0, todayLosses = 0, todayPushes = 0, todayUnits = 0
+  for (const g of gamesWithScores) {
+    const status = gameStatus(g)
+    const hs = g.spread?.home_score ?? g.total?.home_score
+    const as_ = g.spread?.away_score ?? g.total?.away_score
+    if (status !== 'final' || hs == null || as_ == null) continue
+
+    const sp = g.spread
+    const tp = g.total
+
+    if (sp && sp.bet_side_spread !== 'none' && sp.line_spread != null) {
+      const gr = gradeSpread(hs, as_, roundHalf(sp.line_spread), sp.bet_side_spread)
+      if (gr === 'win')  { todayWins++;   todayUnits += 1 }
+      if (gr === 'loss') { todayLosses++; todayUnits -= 1 }
+      if (gr === 'push')   todayPushes++
+    }
+    if (tp && tp.bet_side_total !== 'none' && tp.line_total != null) {
+      const gr = gradeTotal(hs, as_, roundHalf(tp.line_total), tp.bet_side_total)
+      if (gr === 'win')  { todayWins++;   todayUnits += 1 }
+      if (gr === 'loss') { todayLosses++; todayUnits -= 1 }
+      if (gr === 'push')   todayPushes++
+    }
+  }
 
   return (
     <>
@@ -353,27 +375,29 @@ export default function Dashboard() {
       {/* ── Stats bar ── */}
       <div className="stats-bar">
         <div className="stat-card">
-          <div className="stat-label">Record</div>
-          <div className="stat-value">{record.wins}-{record.losses}-{record.pushes}</div>
-          <div className="stat-sub">{hitRate(record.wins, record.losses)} hit rate</div>
+          <div className="stat-label">Today&apos;s Record</div>
+          <div className="stat-value">{todayWins}-{todayLosses}{todayPushes > 0 ? `-${todayPushes}` : ''}</div>
+          <div className="stat-sub">{hitRate(todayWins, todayLosses)} hit rate</div>
         </div>
         <div className="stat-card">
-          <div className="stat-label">Units</div>
-          <div className={`stat-value ${record.units >= 0 ? 'positive' : 'negative'}`}>
-            {record.units >= 0 ? '+' : ''}{record.units?.toFixed(1)}u
+          <div className="stat-label">Today P&amp;L</div>
+          <div className={`stat-value ${todayUnits >= 0 ? 'positive' : 'negative'}`}>
+            {todayUnits >= 0 ? '+' : ''}{todayUnits.toFixed(1)}u
           </div>
+          <div className="stat-sub">${(todayUnits * 25).toFixed(0)} at $25/u</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">Today W</div>
-          <div className="stat-value">{todayWins}</div>
+          <div className="stat-value" style={{ color: todayWins > 0 ? 'var(--accent-green)' : undefined }}>{todayWins}</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">Today L</div>
-          <div className="stat-value">{todayLosses}</div>
+          <div className="stat-value" style={{ color: todayLosses > 0 ? 'var(--accent-red)' : undefined }}>{todayLosses}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-label">Today&apos;s Games</div>
-          <div className="stat-value">{games.length}</div>
+          <div className="stat-label">Games</div>
+          <div className="stat-value">{gamesWithScores.length}</div>
+          <div className="stat-sub">{gamesWithScores.filter(g => gameStatus(g) === 'final').length} final</div>
         </div>
       </div>
 
