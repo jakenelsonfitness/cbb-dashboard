@@ -307,8 +307,8 @@ export default function Dashboard() {
       return new Date(a.game_time).getTime() - new Date(b.game_time).getTime()
     })
 
-  const todayWins   = gamesWithScores.filter(g => overallResult(g) === 'win').length
-  const todayLosses = gamesWithScores.filter(g => overallResult(g) === 'loss').length
+  const todayWins   = gamesWithScores.filter(g => g.spread?.result === 'win' || g.total?.result === 'win').length
+  const todayLosses = gamesWithScores.filter(g => g.spread?.result === 'loss' || g.total?.result === 'loss').length
 
   return (
     <>
@@ -376,7 +376,6 @@ export default function Dashboard() {
             const hasScore = (sp?.home_score ?? tp?.home_score) != null
             const homeScore = sp?.home_score ?? tp?.home_score
             const awayScore = sp?.away_score ?? tp?.away_score
-            const result = overallResult(g)
             const homeFinal = status === 'final' && hasScore
             const homeWon = homeFinal && (homeScore ?? 0) > (awayScore ?? 0)
 
@@ -450,21 +449,32 @@ export default function Dashboard() {
                 {/* Bet taken + result */}
                 <div className="bet-col">
                   {sp && sp.bet_side_spread !== 'none' && (
-                    <span className="bet-chip spread">{spreadBetLabel(sp)}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span className="bet-chip spread">{spreadBetLabel(sp)}</span>
+                      {status === 'final' && sp.result && sp.result !== 'pending' && (
+                        <span className={`bet-result ${sp.result}`}>
+                          {sp.result === 'win' ? '✓ WIN' : sp.result === 'loss' ? '✗ LOSS' : '~ PUSH'}
+                        </span>
+                      )}
+                    </div>
                   )}
                   {tp && tp.bet_side_total !== 'none' && (
-                    <span className={`bet-chip ${tp.bet_side_total === 'over' ? 'total-over' : 'total-under'}`}>
-                      {totalBetLabel(tp)}
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span className={`bet-chip ${tp.bet_side_total === 'over' ? 'total-over' : 'total-under'}`}>
+                        {totalBetLabel(tp)}
+                      </span>
+                      {status === 'final' && tp.result && tp.result !== 'pending' && (
+                        <span className={`bet-result ${tp.result}`}>
+                          {tp.result === 'win' ? '✓ WIN' : tp.result === 'loss' ? '✗ LOSS' : '~ PUSH'}
+                        </span>
+                      )}
+                    </div>
                   )}
                   {sp?.injury_notes && (
                     <span style={{ fontSize: 10, color: 'var(--accent-orange)', textAlign: 'right' }}>
                       🏥 {sp.injury_notes.split('|')[0]}
                     </span>
                   )}
-                  <span className={`bet-result ${result || 'pending'}`}>
-                    {result === 'win' ? '✓ WIN' : result === 'loss' ? '✗ LOSS' : result === 'push' ? '~ PUSH' : 'PENDING'}
-                  </span>
                 </div>
 
               </div>
