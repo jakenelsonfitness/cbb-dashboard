@@ -218,6 +218,22 @@ function overallResult(g: GameGroup): string | null {
   return 'push'
 }
 
+function gradeSpread(homeScore: number, awayScore: number, lineFav: number, side: string): 'win' | 'loss' | 'push' {
+  // lineFav: negative = home favored (e.g. -7.5), positive = away favored
+  const actual = homeScore - awayScore          // positive = home won
+  const covered = actual + lineFav              // > 0 means home covered
+  if (covered === 0) return 'push'
+  if (side === 'home') return covered > 0 ? 'win' : 'loss'
+  return covered < 0 ? 'win' : 'loss'           // side === 'away'
+}
+
+function gradeTotal(homeScore: number, awayScore: number, line: number, side: string): 'win' | 'loss' | 'push' {
+  const actual = homeScore + awayScore
+  if (actual === line) return 'push'
+  if (side === 'over')  return actual > line ? 'win' : 'loss'
+  return actual < line ? 'win' : 'loss'
+}
+
 function hitRate(wins: number, losses: number): string {
   const total = wins + losses
   if (total === 0) return '0.0%'
@@ -448,28 +464,38 @@ export default function Dashboard() {
 
                 {/* Bet taken + result */}
                 <div className="bet-col">
-                  {sp && sp.bet_side_spread !== 'none' && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span className="bet-chip spread">{spreadBetLabel(sp)}</span>
-                      {status === 'final' && sp.result && sp.result !== 'pending' && (
-                        <span className={`bet-result ${sp.result}`}>
-                          {sp.result === 'win' ? '✓ WIN' : sp.result === 'loss' ? '✗ LOSS' : '~ PUSH'}
+                  {sp && sp.bet_side_spread !== 'none' && (() => {
+                    const grade = (status === 'final' && homeScore != null && awayScore != null && sp.line_spread != null && sp.bet_side_spread !== 'none')
+                      ? gradeSpread(homeScore, awayScore, roundHalf(sp.line_spread), sp.bet_side_spread)
+                      : null
+                    return (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span className="bet-chip spread">{spreadBetLabel(sp)}</span>
+                        {grade && (
+                          <span className={`bet-result ${grade}`}>
+                            {grade === 'win' ? '✓ WIN' : grade === 'loss' ? '✗ LOSS' : '~ PUSH'}
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })()}
+                  {tp && tp.bet_side_total !== 'none' && (() => {
+                    const grade = (status === 'final' && homeScore != null && awayScore != null && tp.line_total != null && tp.bet_side_total !== 'none')
+                      ? gradeTotal(homeScore, awayScore, roundHalf(tp.line_total), tp.bet_side_total)
+                      : null
+                    return (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span className={`bet-chip ${tp.bet_side_total === 'over' ? 'total-over' : 'total-under'}`}>
+                          {totalBetLabel(tp)}
                         </span>
-                      )}
-                    </div>
-                  )}
-                  {tp && tp.bet_side_total !== 'none' && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span className={`bet-chip ${tp.bet_side_total === 'over' ? 'total-over' : 'total-under'}`}>
-                        {totalBetLabel(tp)}
-                      </span>
-                      {status === 'final' && tp.result && tp.result !== 'pending' && (
-                        <span className={`bet-result ${tp.result}`}>
-                          {tp.result === 'win' ? '✓ WIN' : tp.result === 'loss' ? '✗ LOSS' : '~ PUSH'}
-                        </span>
-                      )}
-                    </div>
-                  )}
+                        {grade && (
+                          <span className={`bet-result ${grade}`}>
+                            {grade === 'win' ? '✓ WIN' : grade === 'loss' ? '✗ LOSS' : '~ PUSH'}
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })()}
                   {sp?.injury_notes && (
                     <span style={{ fontSize: 10, color: 'var(--accent-orange)', textAlign: 'right' }}>
                       🏥 {sp.injury_notes.split('|')[0]}
