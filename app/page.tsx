@@ -107,19 +107,45 @@ function fuzzyScore(awayTeam: string, homeTeam: string, scores: Map<string, Live
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function shortName(full: string): string {
-  // Return first word (school name) for team column display
-  return full.trim().split(' ')[0]
+function schoolName(full: string): string {
+  // Return just the school portion (drop mascot = last word if >1 word)
+  const words = full.trim().split(' ')
+  if (words.length <= 2) return full  // e.g. "Virginia" or "NC State" — keep as-is
+  return words.slice(0, -1).join(' ') // drop last word (mascot)
 }
 
 function abbr(full: string): string {
-  // 3–4 char abbreviation for use in lines boxes
+  // Short label for lines boxes — 4–6 chars
+  const LOOKUP: Record<string, string> = {
+    'massachusetts': 'UMASS', 'miami (oh)': 'MIA(OH)', 'miami': 'MIAMI',
+    'st. john': 'STJ', "st. john's": 'STJ', 'providence': 'PROV',
+    'virginia': 'UVA', 'nc state': 'NCST', 'iowa state': 'ISU',
+    'texas tech': 'TTU', 'wisconsin': 'WIS', 'louisville': 'LOU',
+    'auburn': 'AUB', 'tennessee': 'TENN', 'arizona': 'ARIZ', 'ucf': 'UCF',
+    'duke': 'DUKE', 'kentucky': 'UK', 'kansas': 'KU', 'houston': 'HOU',
+    'auburn tigers': 'AUB', 'gonzaga': 'GONZ', 'baylor': 'BAY',
+    'purdue': 'PUR', 'alabama': 'ALA', 'arkansas': 'ARK',
+    'florida': 'FLA', 'michigan': 'MICH', 'michigan state': 'MSU',
+    'ohio state': 'OSU', 'indiana': 'IND', 'illinois': 'ILL',
+    'northwestern': 'NW', 'penn state': 'PSU', 'maryland': 'UMD',
+    'connecticut': 'UCONN', 'butler': 'BUT', 'creighton': 'CREI',
+    'villanova': 'NOVA', 'xavier': 'XAV', 'marquette': 'MKE',
+    'georgetown': 'GU', 'seton hall': 'SHU', 'depaul': 'DEP',
+    'notre dame': 'ND', 'louisiana': 'ULL', 'memphis': 'MEM',
+    'wichita state': 'WSU', 'cincinnati': 'CIN', 'tulsa': 'TUL',
+    'south carolina': 'USC', 'mississippi state': 'MSST', 'ole miss': 'MISS',
+    'georgia': 'UGA', 'vanderbilt': 'VAN', 'lsu': 'LSU',
+    'texas a&m': 'TAMU', 'oklahoma': 'OU', 'oklahoma state': 'OKST',
+    'west virginia': 'WVU', 'tcu': 'TCU', 'byu': 'BYU',
+    'colorado': 'COLO', 'utah': 'UTAH', 'oregon': 'ORE',
+    'washington': 'WASH', 'ucla': 'UCLA', 'usc': 'USC',
+    'stanford': 'STAN', 'california': 'CAL', 'san diego state': 'SDSU',
+  }
+  const key = full.trim().toLowerCase()
+  if (LOOKUP[key]) return LOOKUP[key]
+  // Fallback: first word up to 5 chars
   const words = full.trim().split(' ')
-  if (words.length === 1) return words[0].slice(0, 4).toUpperCase()
-  // Common multi-word schools → use initials or first meaningful word
-  const skip = new Set(['st.', 'saint', 'mount', 'mt.', 'fort', 'north', 'south', 'east', 'west', 'new', 'old', 'the'])
-  const main = words.find(w => !skip.has(w.toLowerCase())) || words[0]
-  return main.slice(0, 4).toUpperCase()
+  return words[0].slice(0, 5).toUpperCase()
 }
 
 function formatTime(iso: string | null): string {
@@ -143,10 +169,10 @@ function spreadBetLabel(p: Pick): string {
   if (!p.line_spread) return '—'
   const line = p.line_spread
   if (p.bet_side_spread === 'home') {
-    return `${abbr(p.home_team)} ${line >= 0 ? '+' : ''}${line}`
+    return `${schoolName(p.home_team)} ${line >= 0 ? '+' : ''}${line}`
   }
   const awayLine = -line
-  return `${abbr(p.away_team)} ${awayLine >= 0 ? '+' : ''}${awayLine}`
+  return `${schoolName(p.away_team)} ${awayLine >= 0 ? '+' : ''}${awayLine}`
 }
 
 function totalBetLabel(p: Pick): string {
