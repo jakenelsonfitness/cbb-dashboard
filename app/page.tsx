@@ -25,7 +25,7 @@ interface Pick {
   injury_notes: string | null
 }
 
-interface Record {
+interface BotRecord {
   wins: number
   losses: number
   pushes: number
@@ -87,7 +87,7 @@ function ConfidenceDot({ level }: { level: string }) {
 
 export default function Dashboard() {
   const [games, setGames] = useState<GameGroup[]>([])
-  const [record, setRecord] = useState<Record>({ wins: 0, losses: 0, pushes: 0, units: 0 })
+  const [record, setRecord] = useState<BotRecord>({ wins: 0, losses: 0, pushes: 0, units: 0 })
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [loading, setLoading] = useState(true)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
@@ -98,7 +98,7 @@ export default function Dashboard() {
       const picks: Pick[] = await res.json()
 
       // Group by game
-      const grouped: Record<string, GameGroup> = {}
+      const grouped: { [key: string]: GameGroup } = {}
       for (const p of picks) {
         const key = `${p.away_team}@${p.home_team}`
         if (!grouped[key]) {
