@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 
 interface Pick {
   id: number
@@ -38,6 +38,71 @@ interface GameGroup {
   game_time: string | null
   spread: Pick | null
   total: Pick | null
+}
+
+interface LiveScore {
+  home_score: number | null
+  away_score: number | null
+  live_status: string   // 'pre' | 'H1 12:34' | 'H2 5:00' | 'OT 2:00' | 'final'
+  game_time: string | null
+}
+
+// ── ESPN live score fetcher ───────────────────────────────────────────────────
+
+async function fetchESPNScores(dateStr: string): Promise<Map<string, LiveScore>> {
+  const d = dateStr.replace(/-/g, '')
+  const url = `https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?dates=${d}&limit=200`
+  const map = new Map<string, LiveScore>()
+  try {
+    const res = await fetch(url, { cache: 'no-store' })
+    const data = await res.json()
+    for (const event of data.events ?? []) {
+      for (const comp of event.competitions ?? []) {
+        const statusType = comp.status?.type?.name?.toLowerCase() ?? ''
+        const period = comp.status?.period ?? 0
+        const clock  = comp.status?.displayClock ?? ''
+        const commence: string = comp.date ?? ''
+
+        let liveStatus = 'pre'
+        if (statusType === 'post') liveStatus = 'final'
+        else if (statusType === 'in') liveStatus = period <= 2 ? `H${period} ${clock}` : `OT ${clock}`
+
+        const home = comp.competitors?.find((c: {homeAway: string}) => c.homeAway === 'home')
+        const away = comp.competitors?.find((c: {homeAway: string}) => c.homeAway === 'away')
+        if (!home || !away) continue
+
+        const score: LiveScore = {
+          home_score: parseInt(home.score ?? '0') || 0,
+          away_score: parseInt(away.score ?? '0') || 0,
+          live_status: liveStatus,
+          game_time: commence || null,
+        }
+
+        // Index by both teams (lowercase, first 10 chars) for fuzzy matching
+        const hk = home.team.displayName.toLowerCase()
+        const ak = away.team.displayName.toLowerCase()
+        map.set(`${ak}||${hk}`, score)
+        map.set(`${hk}||${ak}`, score) // reverse index too
+      }
+    }
+  } catch { /* ESPN fetch failed silently */ }
+  return map
+}
+
+function fuzzyScore(awayTeam: string, homeTeam: string, scores: Map<string, LiveScore>): LiveScore | null {
+  const ak = awayTeam.toLowerCase()
+  const hk = homeTeam.toLowerCase()
+  // Exact
+  if (scores.has(`${ak}||${hk}`)) return scores.get(`${ak}||${hk}`)!
+  // Partial — find best overlap
+  for (const [key, val] of scores.entries()) {
+    const [ka, kh] = key.split('||')
+    if ((ak.includes(ka.slice(0, 8)) || ka.includes(ak.slice(0, 8))) &&
+        (hk.includes(kh.slice(0, 8)) || kh.includes(hk.slice(0, 8)))) {
+      return val
+    }
+  }
+  return null
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -124,12 +189,16 @@ function hitRate(wins: number, losses: number): string {
 
 export default function Dashboard() {
   const [games, setGames] = useState<GameGroup[]>([])
+  const [liveScores, setLiveScores] = useState<Map<string, LiveScore>>(new Map())
   const [record, setRecord] = useState<BotRecord>({ wins: 0, losses: 0, pushes: 0, units: 0 })
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [loading, setLoading] = useState(true)
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
+  const [scoresAt, setScoresAt] = useState<Date | null>(null)
+  const gamesRef = useRef<GameGroup[]>([])
 
-  const fetchAll = useCallback(async () => {
+  // Fetch picks + record from Supabase (every 5 min is fine — picks don't change often)
+  const fetchPicks = useCallback(async () => {
     try {
       const [picksRes, recRes] = await Promise.all([
         fetch(`/api/picks?date=${date}`),
@@ -154,6 +223,7 @@ export default function Dashboard() {
         return new Date(a.game_time).getTime() - new Date(b.game_time).getTime()
       })
 
+      gamesRef.current = sorted
       setGames(sorted)
       setRecord(rec)
       setUpdatedAt(new Date())
@@ -164,16 +234,35 @@ export default function Dashboard() {
     }
   }, [date])
 
+  // Fetch live scores directly from ESPN every 2 minutes
+  const fetchScores = useCallback(async () => {
+    const scores = await fetchESPNScores(date)
+    setLiveScores(scores)
+    setScoresAt(new Date())
+  }, [date])
+
   useEffect(() => {
     setLoading(true)
-    fetchAll()
-    const interval = setInterval(fetchAll, 60000)
-    return () => clearInterval(interval)
-  }, [fetchAll])
+    fetchPicks()
+    fetchScores()
+    const picksInterval  = setInterval(fetchPicks,  5 * 60 * 1000)  // every 5 min
+    const scoresInterval = setInterval(fetchScores, 2 * 60 * 1000)  // every 2 min
+    return () => { clearInterval(picksInterval); clearInterval(scoresInterval) }
+  }, [fetchPicks, fetchScores])
 
   const displayDate = new Date(date + 'T12:00:00').toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
-  const todayWins   = games.filter(g => overallResult(g) === 'win').length
-  const todayLosses = games.filter(g => overallResult(g) === 'loss').length
+
+  // Merge ESPN live scores into games
+  const gamesWithScores = games.map(g => {
+    const espn = fuzzyScore(g.away_team, g.home_team, liveScores)
+    if (!espn) return g
+    const mergedSpread = g.spread ? { ...g.spread, home_score: espn.home_score, away_score: espn.away_score, live_status: espn.live_status, game_time: espn.game_time ?? g.game_time } : null
+    const mergedTotal  = g.total  ? { ...g.total,  home_score: espn.home_score, away_score: espn.away_score, live_status: espn.live_status, game_time: espn.game_time ?? g.game_time } : null
+    return { ...g, game_time: espn.game_time ?? g.game_time, spread: mergedSpread, total: mergedTotal }
+  })
+
+  const todayWins   = gamesWithScores.filter(g => overallResult(g) === 'win').length
+  const todayLosses = gamesWithScores.filter(g => overallResult(g) === 'loss').length
 
   return (
     <>
@@ -184,9 +273,9 @@ export default function Dashboard() {
           <h1>CBB Picks</h1>
         </div>
         <div className="header-right">
-          {updatedAt && (
+          {scoresAt && (
             <span className="updated">
-              Updated {updatedAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+              Scores {scoresAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
             </span>
           )}
           <input
@@ -229,11 +318,11 @@ export default function Dashboard() {
       {/* ── Game cards ── */}
       {loading ? (
         <div className="loading">Loading picks…</div>
-      ) : games.length === 0 ? (
+      ) : gamesWithScores.length === 0 ? (
         <div className="loading">No picks for {displayDate}</div>
       ) : (
         <div className="games-grid">
-          {games.map((g, i) => {
+          {gamesWithScores.map((g, i) => {
             const sp = g.spread
             const tp = g.total
             const status = gameStatus(g)
