@@ -148,6 +148,16 @@ function abbr(full: string): string {
   return words[0].slice(0, 5).toUpperCase()
 }
 
+function roundHalf(n: number): number {
+  return Math.round(n * 2) / 2
+}
+
+function fmtLine(n: number | null | undefined): string {
+  if (n == null) return '—'
+  const r = roundHalf(n)
+  return r % 1 === 0 ? r.toFixed(1) : String(r)
+}
+
 function formatTime(iso: string | null): string {
   if (!iso) return '—'
   try {
@@ -167,31 +177,31 @@ function gameStatus(g: GameGroup): 'pre' | 'live' | 'final' {
 
 function spreadBetLabel(p: Pick): string {
   if (!p.line_spread) return '—'
-  const line = p.line_spread
+  const line = roundHalf(p.line_spread)
   if (p.bet_side_spread === 'home') {
-    return `${schoolName(p.home_team)} ${line >= 0 ? '+' : ''}${line}`
+    return `${schoolName(p.home_team)} ${line >= 0 ? '+' : ''}${fmtLine(line)}`
   }
   const awayLine = -line
-  return `${schoolName(p.away_team)} ${awayLine >= 0 ? '+' : ''}${awayLine}`
+  return `${schoolName(p.away_team)} ${awayLine >= 0 ? '+' : ''}${fmtLine(awayLine)}`
 }
 
 function totalBetLabel(p: Pick): string {
   if (!p.line_total) return '—'
-  return `${p.bet_side_total === 'over' ? 'Over' : 'Under'} ${p.line_total}`
+  return `${p.bet_side_total === 'over' ? 'Over' : 'Under'} ${fmtLine(p.line_total)}`
 }
 
 function spreadMarketLabel(p: Pick): string {
   if (!p.line_spread) return '—'
-  const line = p.line_spread
-  if (line < 0) return `${abbr(p.home_team)} ${line}`
-  if (line > 0) return `${abbr(p.away_team)} -${line}`
+  const line = roundHalf(p.line_spread)
+  if (line < 0) return `${abbr(p.home_team)} ${fmtLine(line)}`
+  if (line > 0) return `${abbr(p.away_team)} -${fmtLine(line)}`
   return 'PK'
 }
 
 function modelSpreadLabel(p: Pick): string {
   if (p.pred_spread == null) return '—'
-  const ps = p.pred_spread
-  if (ps > 0) return `${abbr(p.home_team)} -${ps.toFixed(1)}`
+  const ps = p.pred_spread  // already rounded to .5 by _r5()
+  if (ps > 0) return `${abbr(p.home_team)} -${Math.abs(ps).toFixed(1)}`
   if (ps < 0) return `${abbr(p.away_team)} -${Math.abs(ps).toFixed(1)}`
   return 'PK'
 }
@@ -406,7 +416,7 @@ export default function Dashboard() {
                     {tp && (
                       <div className="lines-row">
                         <span className="lines-label">Total</span>
-                        <span className="lines-value">O/U {tp.line_total}</span>
+                        <span className="lines-value">O/U {fmtLine(tp.line_total)}</span>
                       </div>
                     )}
                   </div>
