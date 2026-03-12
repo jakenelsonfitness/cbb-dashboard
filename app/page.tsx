@@ -108,9 +108,18 @@ function fuzzyScore(awayTeam: string, homeTeam: string, scores: Map<string, Live
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function shortName(full: string): string {
-  // Return last word (mascot) unless it's ambiguous
-  const parts = full.trim().split(' ')
-  return parts.length > 1 ? parts[parts.length - 1] : full
+  // Return first word (school name) for team column display
+  return full.trim().split(' ')[0]
+}
+
+function abbr(full: string): string {
+  // 3–4 char abbreviation for use in lines boxes
+  const words = full.trim().split(' ')
+  if (words.length === 1) return words[0].slice(0, 4).toUpperCase()
+  // Common multi-word schools → use initials or first meaningful word
+  const skip = new Set(['st.', 'saint', 'mount', 'mt.', 'fort', 'north', 'south', 'east', 'west', 'new', 'old', 'the'])
+  const main = words.find(w => !skip.has(w.toLowerCase())) || words[0]
+  return main.slice(0, 4).toUpperCase()
 }
 
 function formatTime(iso: string | null): string {
@@ -122,14 +131,6 @@ function formatTime(iso: string | null): string {
   } catch { return '—' }
 }
 
-function fmtEdge(v: number | null | undefined): string {
-  if (v == null) return ''
-  return `${v > 0 ? '+' : ''}${v.toFixed(1)}`
-}
-
-function isStrongEdge(v: number | null | undefined): boolean {
-  return v != null && Math.abs(v) >= 7
-}
 
 function gameStatus(g: GameGroup): 'pre' | 'live' | 'final' {
   const s = g.spread?.live_status || g.total?.live_status || ''
@@ -142,10 +143,10 @@ function spreadBetLabel(p: Pick): string {
   if (!p.line_spread) return '—'
   const line = p.line_spread
   if (p.bet_side_spread === 'home') {
-    return `${shortName(p.home_team)} ${line >= 0 ? '+' : ''}${line}`
+    return `${abbr(p.home_team)} ${line >= 0 ? '+' : ''}${line}`
   }
   const awayLine = -line
-  return `${shortName(p.away_team)} ${awayLine >= 0 ? '+' : ''}${awayLine}`
+  return `${abbr(p.away_team)} ${awayLine >= 0 ? '+' : ''}${awayLine}`
 }
 
 function totalBetLabel(p: Pick): string {
@@ -156,17 +157,16 @@ function totalBetLabel(p: Pick): string {
 function spreadMarketLabel(p: Pick): string {
   if (!p.line_spread) return '—'
   const line = p.line_spread
-  // line is from home perspective; negative = home favored
-  if (line < 0) return `${shortName(p.home_team)} ${line}`
-  if (line > 0) return `${shortName(p.away_team)} -${line}`
+  if (line < 0) return `${abbr(p.home_team)} ${line}`
+  if (line > 0) return `${abbr(p.away_team)} -${line}`
   return 'PK'
 }
 
 function modelSpreadLabel(p: Pick): string {
   if (p.pred_spread == null) return '—'
   const ps = p.pred_spread
-  if (ps > 0) return `${shortName(p.home_team)} -${ps.toFixed(1)}`
-  if (ps < 0) return `${shortName(p.away_team)} -${Math.abs(ps).toFixed(1)}`
+  if (ps > 0) return `${abbr(p.home_team)} -${ps.toFixed(1)}`
+  if (ps < 0) return `${abbr(p.away_team)} -${Math.abs(ps).toFixed(1)}`
   return 'PK'
 }
 
@@ -340,8 +340,8 @@ export default function Dashboard() {
                 {/* Teams + score */}
                 <div className="teams-col">
                   <div className="team-row">
-                    <span className={`team-name ${homeFinal ? (homeWon ? 'winner' : 'loser') : ''}`}>
-                      {shortName(g.away_team)}
+                    <span className={`team-name ${homeFinal ? (homeWon ? 'loser' : 'winner') : ''}`}>
+                      {g.away_team}
                     </span>
                     <span className={`team-score ${hasScore ? (homeWon ? 'loser' : 'winner') : 'pending'}`}>
                       {hasScore ? awayScore : '—'}
@@ -349,7 +349,7 @@ export default function Dashboard() {
                   </div>
                   <div className="team-row">
                     <span className={`team-name ${homeFinal ? (homeWon ? 'winner' : 'loser') : ''}`}>
-                      {shortName(g.home_team)}
+                      {g.home_team}
                     </span>
                     <span className={`team-score ${hasScore ? (homeWon ? 'winner' : 'loser') : 'pending'}`}>
                       {hasScore ? homeScore : '—'}
@@ -404,22 +404,12 @@ export default function Dashboard() {
                 {/* Bet taken + result */}
                 <div className="bet-col">
                   {sp && sp.bet_side_spread !== 'none' && (
-                    <>
-                      <span className="bet-chip spread">{spreadBetLabel(sp)}</span>
-                      <span className={`edge-value ${isStrongEdge(sp.spread_edge) ? 'strong' : ''}`}>
-                        Edge: {fmtEdge(sp.spread_edge)}
-                      </span>
-                    </>
+                    <span className="bet-chip spread">{spreadBetLabel(sp)}</span>
                   )}
                   {tp && tp.bet_side_total !== 'none' && (
-                    <>
-                      <span className={`bet-chip ${tp.bet_side_total === 'over' ? 'total-over' : 'total-under'}`}>
-                        {totalBetLabel(tp)}
-                      </span>
-                      <span className={`edge-value ${isStrongEdge(tp.total_edge) ? 'strong' : ''}`}>
-                        Edge: {fmtEdge(tp.total_edge)}
-                      </span>
-                    </>
+                    <span className={`bet-chip ${tp.bet_side_total === 'over' ? 'total-over' : 'total-under'}`}>
+                      {totalBetLabel(tp)}
+                    </span>
                   )}
                   {sp?.injury_notes && (
                     <span style={{ fontSize: 10, color: 'var(--accent-orange)', textAlign: 'right' }}>

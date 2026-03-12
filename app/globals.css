@@ -116,14 +116,14 @@ body {
 .game-time { font-size: 12px; color: var(--text-muted); font-family: var(--mono); }
 
 .lines-col { display: flex; gap: 8px; min-width: 320px; }
-.lines-box { flex: 1; padding: 8px 12px; border-radius: 8px; display: flex; flex-direction: column; gap: 4px; }
+.lines-box { flex: 1; padding: 10px 14px; border-radius: 8px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .lines-box.market { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.04); }
 .lines-box.model  { background: rgba(59,130,246,0.04); border: 1px solid rgba(59,130,246,0.08); }
-.lines-header { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 2px; font-weight: 600; }
+.lines-header { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 4px; font-weight: 600; }
 .lines-box.model .lines-header { color: var(--accent-blue); }
-.lines-row { display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
-.lines-label { color: var(--text-secondary); font-size: 11px; }
-.lines-value { font-family: var(--mono); font-weight: 600; font-size: 13px; color: var(--text-primary); }
+.lines-row { display: grid; grid-template-columns: 52px 1fr; align-items: center; gap: 8px; }
+.lines-label { color: var(--text-secondary); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }
+.lines-value { font-family: var(--mono); font-weight: 600; font-size: 13px; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lines-box.model .lines-value { color: var(--accent-blue); }
 
 .bet-col { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; min-width: 160px; }
