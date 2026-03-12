@@ -18,7 +18,7 @@ interface Pick {
   spread_edge: number | null
   total_edge: number | null
   confidence: string
-  result: 'win' | 'loss' | 'push' | 'pending' | null
+  result: string | null
   home_score: number | null
   away_score: number | null
   live_status: string | null
@@ -36,76 +36,116 @@ interface GameGroup {
   home_team: string
   away_team: string
   game_time: string | null
-  spread_pick: Pick | null
-  total_pick: Pick | null
+  spread: Pick | null
+  total: Pick | null
 }
 
-function formatTime(t: string | null): string {
-  if (!t) return '—'
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function shortName(full: string): string {
+  // Return last word (mascot) unless it's ambiguous
+  const parts = full.trim().split(' ')
+  return parts.length > 1 ? parts[parts.length - 1] : full
+}
+
+function formatTime(iso: string | null): string {
+  if (!iso) return '—'
   try {
-    const d = new Date(t)
-    return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' })
-  } catch { return t }
+    return new Date(iso).toLocaleTimeString('en-US', {
+      hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York',
+    })
+  } catch { return '—' }
 }
 
-function formatSpreadBet(pick: Pick): string {
-  if (!pick.line_spread) return '—'
-  const line = pick.line_spread
-  if (pick.bet_side_spread === 'home') {
-    return `${pick.home_team.split(' ').pop()} ${line > 0 ? '+' : ''}${line}`
-  } else {
-    const awayLine = -line
-    return `${pick.away_team.split(' ').pop()} ${awayLine > 0 ? '+' : ''}${awayLine}`
+function fmtEdge(v: number | null | undefined): string {
+  if (v == null) return ''
+  return `${v > 0 ? '+' : ''}${v.toFixed(1)}`
+}
+
+function isStrongEdge(v: number | null | undefined): boolean {
+  return v != null && Math.abs(v) >= 7
+}
+
+function gameStatus(g: GameGroup): 'pre' | 'live' | 'final' {
+  const s = g.spread?.live_status || g.total?.live_status || ''
+  if (s === 'final') return 'final'
+  if (s && s !== 'pre' && s !== '') return 'live'
+  return 'pre'
+}
+
+function spreadBetLabel(p: Pick): string {
+  if (!p.line_spread) return '—'
+  const line = p.line_spread
+  if (p.bet_side_spread === 'home') {
+    return `${shortName(p.home_team)} ${line >= 0 ? '+' : ''}${line}`
   }
+  const awayLine = -line
+  return `${shortName(p.away_team)} ${awayLine >= 0 ? '+' : ''}${awayLine}`
 }
 
-function formatTotalBet(pick: Pick): string {
-  if (!pick.line_total) return '—'
-  return `${pick.bet_side_total === 'over' ? 'Over' : 'Under'} ${pick.line_total}`
+function totalBetLabel(p: Pick): string {
+  if (!p.line_total) return '—'
+  return `${p.bet_side_total === 'over' ? 'Over' : 'Under'} ${p.line_total}`
 }
 
-function ResultBadge({ result, liveStatus }: { result: string | null; liveStatus: string | null }) {
-  if (liveStatus && liveStatus !== 'final' && liveStatus !== 'pre') {
-    return <span className="px-2 py-0.5 rounded text-xs font-bold bg-yellow-500/20 text-yellow-400 animate-pulse">LIVE</span>
-  }
-  if (result === 'win') return <span className="px-2 py-0.5 rounded text-xs font-bold bg-green-500/20 text-green-400">WIN</span>
-  if (result === 'loss') return <span className="px-2 py-0.5 rounded text-xs font-bold bg-red-500/20 text-red-400">LOSS</span>
-  if (result === 'push') return <span className="px-2 py-0.5 rounded text-xs font-bold bg-gray-500/20 text-gray-400">PUSH</span>
-  return <span className="px-2 py-0.5 rounded text-xs font-bold bg-white/10 text-gray-400">—</span>
+function spreadMarketLabel(p: Pick): string {
+  if (!p.line_spread) return '—'
+  const line = p.line_spread
+  // line is from home perspective; negative = home favored
+  if (line < 0) return `${shortName(p.home_team)} ${line}`
+  if (line > 0) return `${shortName(p.away_team)} -${line}`
+  return 'PK'
 }
 
-function ConfidenceDot({ level }: { level: string }) {
-  const colors: Record<string, string> = {
-    Elite: 'bg-purple-400',
-    Strong: 'bg-blue-400',
-    Moderate: 'bg-sky-400',
-    Lean: 'bg-gray-400',
-    Tournament: 'bg-orange-400',
-  }
-  return <span className={`inline-block w-2 h-2 rounded-full ${colors[level] || 'bg-gray-500'} mr-1`} />
+function modelSpreadLabel(p: Pick): string {
+  if (p.pred_spread == null) return '—'
+  const ps = p.pred_spread
+  if (ps > 0) return `${shortName(p.home_team)} -${ps.toFixed(1)}`
+  if (ps < 0) return `${shortName(p.away_team)} -${Math.abs(ps).toFixed(1)}`
+  return 'PK'
 }
+
+function overallResult(g: GameGroup): string | null {
+  const results = [g.spread?.result, g.total?.result].filter(Boolean) as string[]
+  if (results.length === 0) return null
+  if (results.every(r => r === 'pending' || r == null)) return 'pending'
+  if (results.some(r => r === 'win')) return 'win'
+  if (results.some(r => r === 'loss')) return 'loss'
+  return 'push'
+}
+
+function hitRate(wins: number, losses: number): string {
+  const total = wins + losses
+  if (total === 0) return '0.0%'
+  return `${((wins / total) * 100).toFixed(1)}%`
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
   const [games, setGames] = useState<GameGroup[]>([])
   const [record, setRecord] = useState<BotRecord>({ wins: 0, losses: 0, pushes: 0, units: 0 })
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [loading, setLoading] = useState(true)
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
 
-  const fetchPicks = useCallback(async () => {
+  const fetchAll = useCallback(async () => {
     try {
-      const res = await fetch(`/api/picks?date=${date}`)
-      const picks: Pick[] = await res.json()
+      const [picksRes, recRes] = await Promise.all([
+        fetch(`/api/picks?date=${date}`),
+        fetch('/api/record'),
+      ])
+      const picks: Pick[] = await picksRes.json()
+      const rec: BotRecord = await recRes.json()
 
-      // Group by game
       const grouped: { [key: string]: GameGroup } = {}
       for (const p of picks) {
-        const key = `${p.away_team}@${p.home_team}`
+        const key = `${p.away_team}||${p.home_team}`
         if (!grouped[key]) {
-          grouped[key] = { home_team: p.home_team, away_team: p.away_team, game_time: p.game_time, spread_pick: null, total_pick: null }
+          grouped[key] = { home_team: p.home_team, away_team: p.away_team, game_time: p.game_time, spread: null, total: null }
         }
-        if (p.bet_type === 'spread') grouped[key].spread_pick = p
-        if (p.bet_type === 'total') grouped[key].total_pick = p
+        if (p.bet_type === 'spread') grouped[key].spread = p
+        if (p.bet_type === 'total')  grouped[key].total  = p
       }
 
       const sorted = Object.values(grouped).sort((a, b) => {
@@ -115,146 +155,218 @@ export default function Dashboard() {
       })
 
       setGames(sorted)
-      setLastUpdated(new Date())
-    } catch (e) { console.error(e) } finally { setLoading(false) }
+      setRecord(rec)
+      setUpdatedAt(new Date())
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setLoading(false)
+    }
   }, [date])
 
-  const fetchRecord = useCallback(async () => {
-    try {
-      const res = await fetch('/api/record')
-      const data = await res.json()
-      setRecord(data)
-    } catch (e) { console.error(e) }
-  }, [])
-
   useEffect(() => {
-    fetchPicks()
-    fetchRecord()
-    const interval = setInterval(() => { fetchPicks(); fetchRecord() }, 60000) // refresh every 60s
+    setLoading(true)
+    fetchAll()
+    const interval = setInterval(fetchAll, 60000)
     return () => clearInterval(interval)
-  }, [fetchPicks, fetchRecord])
+  }, [fetchAll])
 
-  const totalPicks = games.length
-  const wins = games.filter(g => g.spread_pick?.result === 'win' || g.total_pick?.result === 'win').length
-  const losses = games.filter(g => g.spread_pick?.result === 'loss' || g.total_pick?.result === 'loss').length
+  const displayDate = new Date(date + 'T12:00:00').toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
+  const todayWins   = games.filter(g => overallResult(g) === 'win').length
+  const todayLosses = games.filter(g => overallResult(g) === 'loss').length
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6">
-      {/* Header */}
-      <div className="mb-6">
-        <div className="flex items-center justify-between mb-1">
-          <h1 className="text-2xl font-bold tracking-tight">🏀 CBB Picks</h1>
+    <>
+      {/* ── Header ── */}
+      <div className="header">
+        <div className="header-left">
+          <span className="logo">🏀</span>
+          <h1>CBB Picks</h1>
+        </div>
+        <div className="header-right">
+          {updatedAt && (
+            <span className="updated">
+              Updated {updatedAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+            </span>
+          )}
           <input
             type="date"
             value={date}
             onChange={e => { setDate(e.target.value); setLoading(true) }}
-            className="bg-white/10 text-white text-sm rounded px-2 py-1 border border-white/20"
+            className="date-badge"
+            style={{ cursor: 'pointer' }}
           />
         </div>
-        {lastUpdated && (
-          <p className="text-xs text-gray-500">Updated {lastUpdated.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</p>
-        )}
       </div>
 
-      {/* Record bar */}
-      <div className="grid grid-cols-4 gap-2 mb-6">
-        {[
-          { label: 'Record', value: `${record.wins}-${record.losses}-${record.pushes}` },
-          { label: 'Units', value: `${record.units >= 0 ? '+' : ''}${record.units?.toFixed(1)}u` },
-          { label: "Today W", value: String(wins) },
-          { label: "Today L", value: String(losses) },
-        ].map(s => (
-          <div key={s.label} className="bg-white/5 rounded-xl p-3 text-center">
-            <div className="text-lg font-bold">{s.value}</div>
-            <div className="text-xs text-gray-500 mt-0.5">{s.label}</div>
+      {/* ── Stats bar ── */}
+      <div className="stats-bar">
+        <div className="stat-card">
+          <div className="stat-label">Record</div>
+          <div className="stat-value">{record.wins}-{record.losses}-{record.pushes}</div>
+          <div className="stat-sub">{hitRate(record.wins, record.losses)} hit rate</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Units</div>
+          <div className={`stat-value ${record.units >= 0 ? 'positive' : 'negative'}`}>
+            {record.units >= 0 ? '+' : ''}{record.units?.toFixed(1)}u
           </div>
-        ))}
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Today W</div>
+          <div className="stat-value">{todayWins}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Today L</div>
+          <div className="stat-value">{todayLosses}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Today&apos;s Games</div>
+          <div className="stat-value">{games.length}</div>
+        </div>
       </div>
 
-      {/* Picks list */}
+      {/* ── Game cards ── */}
       {loading ? (
-        <div className="text-center text-gray-500 py-16">Loading picks…</div>
+        <div className="loading">Loading picks…</div>
       ) : games.length === 0 ? (
-        <div className="text-center text-gray-500 py-16">No picks for {date}</div>
+        <div className="loading">No picks for {displayDate}</div>
       ) : (
-        <div className="space-y-3">
+        <div className="games-grid">
           {games.map((g, i) => {
-            const sp = g.spread_pick
-            const tp = g.total_pick
-            const liveStatus = sp?.live_status || tp?.live_status
+            const sp = g.spread
+            const tp = g.total
+            const status = gameStatus(g)
+            const liveLabel = sp?.live_status || tp?.live_status || ''
+            const hasScore = (sp?.home_score ?? tp?.home_score) != null
             const homeScore = sp?.home_score ?? tp?.home_score
             const awayScore = sp?.away_score ?? tp?.away_score
-            const hasScore = homeScore !== null && awayScore !== null
-            const isLive = liveStatus && liveStatus !== 'final' && liveStatus !== 'pre'
-            const isFinal = liveStatus === 'final'
+            const result = overallResult(g)
+            const homeFinal = status === 'final' && hasScore
+            const homeWon = homeFinal && (homeScore ?? 0) > (awayScore ?? 0)
 
             return (
-              <div key={i} className={`rounded-2xl p-4 border ${isLive ? 'border-yellow-500/30 bg-yellow-500/5' : 'border-white/10 bg-white/5'}`}>
-                {/* Game header */}
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <div className="text-sm font-semibold">
-                      {g.away_team.replace(/ (Wildcats|Bulldogs|Tigers|Bears|Cardinals|Eagles|Hawks|Wolves|Huskies|Cougars|Trojans|Bruins|Bobcats|Falcons|Panthers|Rams|Owls|Bison|Lions|Vikings|Knights|Ramblers|Flyers|Friars|Hoyas|Quakers|Crimson|Tar Heels|Blue Devils|Demon Deacons|Orange|Bonnies|Billikens|Redbirds|Musketeers|Bearcats|Cyclones|Jayhawks|Longhorns|Sooners|Red Raiders|Cowboys|Mountaineers|Cornhuskers|Huskers|Badgers|Illini|Hawkeyes|Gophers|Nittany Lions|Spartans|Wolverines|Buckeyes|Hoosiers|Boilermakers|Golden Gophers|Terrapins|Scarlet Knights|Blue Hens|Retrievers|Flames|Dukes|Monarchs|Seahawks|Governors|Thundering Herd|Golden Eagles|Colonels|Hilltoppers|Toppers|Racers|Panthers|Colonials|Patriors|Explorers|Dragons|Phoenixes|Pioneers|Greyhounds|Retrievers|Matadors|Antelopes|Aggies|Lobos|Aztecs|Tritons|Gauchos|Roadrunners|49ers|Miners|Mustangs|Mean Green|Colonels|RedHawks|Redhawks|Bobcats|Rockets|Flashes|Zips|Cardinals|Penguins|Golden Flashes|Falcons|Bald Eagles)$/i, '').trim()}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      @ {g.home_team.replace(/ (Wildcats|Bulldogs|Tigers|Bears|Cardinals|Eagles|Hawks|Wolves|Huskies|Cougars|Trojans|Bruins|Bobcats|Falcons|Panthers|Rams|Owls|Bison|Lions|Vikings|Knights|Ramblers|Flyers|Friars|Hoyas|Quakers|Crimson|Tar Heels|Blue Devils|Demon Deacons|Orange|Bonnies|Billikens|Redbirds|Musketeers|Bearcats|Cyclones|Jayhawks|Longhorns|Sooners|Red Raiders|Cowboys|Mountaineers|Cornhuskers|Huskers|Badgers|Illini|Hawkeyes|Gophers|Nittany Lions|Spartans|Wolverines|Buckeyes|Hoosiers|Boilermakers|Golden Gophers|Terrapins|Scarlet Knights|Blue Hens|Retrievers|Flames|Dukes|Monarchs|Seahawks|Governors|Thundering Herd|Golden Eagles|Colonels|Hilltoppers|Toppers|Racers|Panthers|Colonials|Patriors|Explorers|Dragons|Phoenixes|Pioneers|Greyhounds|Retrievers|Matadors|Antelopes|Aggies|Lobos|Aztecs|Tritons|Gauchos|Roadrunners|49ers|Miners|Mustangs|Mean Green|Colonels|RedHawks|Redhawks|Bobcats|Rockets|Flashes|Zips|Cardinals|Penguins|Golden Flashes|Falcons|Bald Eagles)$/i, '').trim()}
-                    </div>
+              <div key={i} className={`game-card status-${status}`}>
+
+                {/* Teams + score */}
+                <div className="teams-col">
+                  <div className="team-row">
+                    <span className={`team-name ${homeFinal ? (homeWon ? 'winner' : 'loser') : ''}`}>
+                      {shortName(g.away_team)}
+                    </span>
+                    <span className={`team-score ${hasScore ? (homeWon ? 'loser' : 'winner') : 'pending'}`}>
+                      {hasScore ? awayScore : '—'}
+                    </span>
                   </div>
-                  <div className="text-right">
-                    {hasScore ? (
-                      <div className="text-right">
-                        <div className={`text-lg font-bold ${isLive ? 'text-yellow-400' : isFinal ? 'text-white' : 'text-gray-300'}`}>
-                          {awayScore} – {homeScore}
-                        </div>
-                        <div className="text-xs text-gray-500">{isFinal ? 'Final' : liveStatus || ''}</div>
+                  <div className="team-row">
+                    <span className={`team-name ${homeFinal ? (homeWon ? 'winner' : 'loser') : ''}`}>
+                      {shortName(g.home_team)}
+                    </span>
+                    <span className={`team-score ${hasScore ? (homeWon ? 'winner' : 'loser') : 'pending'}`}>
+                      {hasScore ? homeScore : '—'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Status + time */}
+                <div className="status-col">
+                  {status === 'final' && <span className="status-badge final">Final</span>}
+                  {status === 'live'  && <span className="status-badge live">● Live</span>}
+                  {status === 'pre'   && <span className="status-badge pre">Upcoming</span>}
+                  <span className="game-time">
+                    {status === 'live' ? liveLabel : formatTime(g.game_time)}
+                  </span>
+                </div>
+
+                {/* Market + model lines */}
+                <div className="lines-col">
+                  <div className="lines-box market">
+                    <div className="lines-header">Market Line</div>
+                    {sp && (
+                      <div className="lines-row">
+                        <span className="lines-label">Spread</span>
+                        <span className="lines-value">{spreadMarketLabel(sp)}</span>
                       </div>
-                    ) : (
-                      <div className="text-sm text-gray-400">{formatTime(g.game_time)}</div>
+                    )}
+                    {tp && (
+                      <div className="lines-row">
+                        <span className="lines-label">Total</span>
+                        <span className="lines-value">O/U {tp.line_total}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="lines-box model">
+                    <div className="lines-header">Model</div>
+                    {sp && (
+                      <div className="lines-row">
+                        <span className="lines-label">Spread</span>
+                        <span className="lines-value">{modelSpreadLabel(sp)}</span>
+                      </div>
+                    )}
+                    {tp && (
+                      <div className="lines-row">
+                        <span className="lines-label">Total</span>
+                        <span className="lines-value">{tp.pred_total?.toFixed(1)}</span>
+                      </div>
                     )}
                   </div>
                 </div>
 
-                {/* Picks */}
-                <div className="space-y-2">
+                {/* Bet taken + result */}
+                <div className="bet-col">
                   {sp && sp.bet_side_spread !== 'none' && (
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <ConfidenceDot level={sp.confidence} />
-                        <div>
-                          <span className="text-sm font-medium">{formatSpreadBet(sp)}</span>
-                          {sp.spread_edge !== null && (
-                            <span className="ml-2 text-xs text-gray-500">edge {sp.spread_edge > 0 ? '+' : ''}{sp.spread_edge?.toFixed(1)}</span>
-                          )}
-                        </div>
-                      </div>
-                      <ResultBadge result={sp.result} liveStatus={sp.live_status} />
-                    </div>
+                    <>
+                      <span className="bet-chip spread">{spreadBetLabel(sp)}</span>
+                      <span className={`edge-value ${isStrongEdge(sp.spread_edge) ? 'strong' : ''}`}>
+                        Edge: {fmtEdge(sp.spread_edge)}
+                      </span>
+                    </>
                   )}
                   {tp && tp.bet_side_total !== 'none' && (
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <ConfidenceDot level={tp.confidence} />
-                        <div>
-                          <span className="text-sm font-medium">{formatTotalBet(tp)}</span>
-                          {tp.total_edge !== null && (
-                            <span className="ml-2 text-xs text-gray-500">edge {tp.total_edge > 0 ? '+' : ''}{tp.total_edge?.toFixed(1)}</span>
-                          )}
-                        </div>
-                      </div>
-                      <ResultBadge result={tp.result} liveStatus={tp.live_status} />
-                    </div>
+                    <>
+                      <span className={`bet-chip ${tp.bet_side_total === 'over' ? 'total-over' : 'total-under'}`}>
+                        {totalBetLabel(tp)}
+                      </span>
+                      <span className={`edge-value ${isStrongEdge(tp.total_edge) ? 'strong' : ''}`}>
+                        Edge: {fmtEdge(tp.total_edge)}
+                      </span>
+                    </>
                   )}
                   {sp?.injury_notes && (
-                    <div className="text-xs text-amber-400/80 mt-1">🏥 {sp.injury_notes}</div>
+                    <span style={{ fontSize: 10, color: 'var(--accent-orange)', textAlign: 'right' }}>
+                      🏥 {sp.injury_notes.split('|')[0]}
+                    </span>
                   )}
+                  <span className={`bet-result ${result || 'pending'}`}>
+                    {result === 'win' ? '✓ WIN' : result === 'loss' ? '✗ LOSS' : result === 'push' ? '~ PUSH' : 'PENDING'}
+                  </span>
                 </div>
+
               </div>
             )
           })}
         </div>
       )}
 
-      <p className="text-center text-xs text-gray-600 mt-8">Paper money · $25/unit · Tournament model</p>
-    </div>
+      {/* ── Legend ── */}
+      <div className="legend">
+        {[
+          { color: 'var(--accent-blue)',   label: 'Upcoming' },
+          { color: 'var(--accent-green)',  label: 'Live' },
+          { color: 'var(--text-muted)',    label: 'Final' },
+          { color: 'var(--accent-purple)', label: 'Spread Bet' },
+          { color: 'var(--accent-orange)', label: 'Over' },
+          { color: 'var(--accent-blue)',   label: 'Under' },
+        ].map(l => (
+          <div key={l.label} className="legend-item">
+            <div className="legend-dot" style={{ background: l.color }} />
+            {l.label}
+          </div>
+        ))}
+        <div className="legend-item" style={{ marginLeft: 'auto' }}>
+          Paper money · $25/unit · Tournament model
+        </div>
+      </div>
+    </>
   )
 }
